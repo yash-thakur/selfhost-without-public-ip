@@ -213,6 +213,55 @@ One tunnel serves any number of domains. For a domain other than your first:
 
 ---
 
+## Access control — not everything should be public
+
+**The tunnel solves *reachability*, not *authorization*.** By default, every hostname you add to the
+ingress is reachable by the entire internet — including your Dokploy dashboard and any internal
+admin apps. Removing the network boundary (ports, public IP) means **authentication is now your only
+boundary**. A public tunnel hostname in front of a weak or default-admin app is as exposed as port
+forwarding would have been — arguably more so, because it has a clean Cloudflare TLS front and looks
+legitimate.
+
+**Principle: reachable ≠ should-be-public. Classify every hostname, and gate the ones that aren't
+meant for everyone.**
+
+| Hostname | Example | Exposure |
+|---|---|---|
+| Public | landing page, guest RSVP form, marketing site | open |
+| Protected | `dokploy.*` dashboard, admin panels, internal tools, staging | behind auth |
+
+### Put protected hostnames behind Cloudflare Access (Zero Trust)
+
+[Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) is free up to
+50 users and enforces identity **before** a request ever reaches your box, so an attacker can't even
+probe the app:
+
+1. In the Cloudflare dashboard, enable **Zero Trust** (one-time setup, free plan).
+2. **Zero Trust → Access → Applications → Add an application → Self-hosted.**
+3. Set the **Application domain** to the hostname to protect, e.g. `dokploy.yourdomain.com`.
+4. Add a **policy**: Action **Allow**, with a rule such as *Emails* = your address, or *Emails ending
+   in* = your domain. Everyone else is blocked at Cloudflare's edge.
+5. Pick a login method (one-time PIN to email works with zero IdP setup; Google/GitHub/etc. also
+   supported). Save.
+
+Now `dokploy.yourdomain.com` shows a Cloudflare login screen first; only approved identities reach
+Dokploy. **Do this for the dashboard at minimum** — it's the highest-value target on the box.
+
+### Machine-to-machine (webhooks, APIs)
+
+For hostnames that are hit by software, not people (incoming webhooks, API callers), don't use an
+interactive login — use an Access **service token** (a client ID/secret pair the caller sends as
+headers), or restrict by `cloudflared` + mTLS. Keep interactive Access for human-facing apps.
+
+### Defense in depth
+
+Access is the clean front gate, but keep the app's own auth hardened too — in particular the repo's
+warning below about dev-mode auth falling back to an admin role when a password env var is unset.
+Behind a public tunnel that's a takeover risk; behind Access it becomes a second layer, not the only
+one.
+
+---
+
 ## Resource notes (8GB box)
 
 - Dokploy idles at ~1–1.5GB → ~6GB left for your apps. Run one or two heavy stacks, not all at once.
@@ -231,6 +280,9 @@ One tunnel serves any number of domains. For a domain other than your first:
   proxy causes `POST /api/... → 405`.
 - Put admin passwords / session secrets in Dokploy **env vars**, never in the repo. If an app's
   auth falls back to an admin role when its password var is unset, a missing var = public exposure.
+- **Gate non-public hostnames with Cloudflare Access** (see *Access control* above). The dashboard
+  and any admin/internal app should never be openly reachable just because the tunnel can route to
+  them.
 
 ---
 

@@ -3,7 +3,7 @@ name: dokploy-cloudflared-cgnat
 description: "Expose self-hosted web apps that run on a home/office machine behind CGNAT (e.g. Jio/Airtel residential broadband) to the public internet, with no port-forwarding and no public IP, by pairing a Dokploy PaaS install with a Cloudflare Tunnel. Use when the user wants to host apps on a local Ubuntu server/laptop behind CGNAT, map custom domains/subdomains to those apps, route everything through one tunnel, and front it with Cloudflare TLS. Covers the full install, per-app and multi-domain routing loop, the memory/RAM constraints of small boxes, and the common 1033/502/redirect-loop failure modes."
 license: MIT
 metadata:
-  version: "1.0"
+  version: "1.1"
   author: yash
 ---
 
@@ -197,10 +197,33 @@ fine via `route dns`; remove any pre-existing conflicting `A`/`AAAA`/`CNAME` on 
   desktop apps) are NOT a fit — not a tunnel limit, they need a persistent logged-in session; keep
   those local. Only the stateless request/response web half belongs here.
 
+## Access control (reachable ≠ public)
+
+The tunnel solves reachability, NOT authorization. Every ingress hostname is open to the whole
+internet by default — including the Dokploy dashboard and any admin/internal app. Removing the
+network boundary means authentication is now the ONLY boundary; a public hostname over a weak or
+default-admin app is as exposed as port forwarding. State this to the user and classify hostnames:
+public (landing pages, guest forms) vs protected (dashboard, admin panels, internal tools, staging).
+
+Put protected hostnames behind **Cloudflare Access** (Zero Trust, free ≤50 users), which enforces
+identity at the edge before the request reaches the box:
+1. Cloudflare dashboard → enable Zero Trust (one-time).
+2. Zero Trust → Access → Applications → Add application → Self-hosted.
+3. Application domain = the hostname (e.g. `dokploy.domain.com`).
+4. Policy: Allow + rule (Emails = your address, or Emails ending in = your domain). Others blocked.
+5. Login method: one-time PIN to email needs no IdP; Google/GitHub/etc. also work.
+
+Gate the Dokploy dashboard at minimum — highest-value target. For machine-to-machine hostnames
+(webhooks, APIs) use an Access **service token** (client ID/secret headers) or mTLS, not an
+interactive login. Access is the front gate; keep app-level auth hardened too (defense in depth,
+especially the dev-mode admin-fallback footgun below).
+
 ## Security
 
 - Behind the tunnel you do NOT open 80/443 to the LAN/world. Firewall: allow SSH from LAN only;
   the tunnel reaches Traefik over loopback.
+- Gate non-public hostnames with Cloudflare Access (see Access control above) — the dashboard and
+  admin/internal apps must not be openly reachable just because the tunnel can route to them.
 - Behind Cloudflare, apps serve plain HTTP internally — do NOT run a second internal nginx TLS
   terminator; point the tunnel at the plain-HTTP service that also proxies `/api`. Pointing at a
   static-only service that lacks the `/api` proxy causes `POST /api/... → 405` (a known footgun).
