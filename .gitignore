@@ -1,0 +1,16 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# never commit secrets or tunnel credentials
+*.pem
+*.json.cred
+.cloudflared/
+*.env
+.env
+.env.*
+!.env.example
