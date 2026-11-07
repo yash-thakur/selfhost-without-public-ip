@@ -14,3 +14,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# local-only: sharing/post text, not part of the repo
+SHARING.md
